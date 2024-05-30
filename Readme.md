@@ -1,6 +1,7 @@
 # File Syncer
 
 This is a file synchronization program that syncs files over the network.
+It uses the rsync algorithm to calculate checksums for files and patches them over the network. It can be used to syncronize files between a cluster of machines in an efficient way, using node.js.
 
 ## Installation
 
