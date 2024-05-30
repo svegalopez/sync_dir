@@ -7,8 +7,8 @@ const bufferCrc32 = require("buffer-crc32");
 
 // Constants
 const BLOCK_SIZE = 256; // Block size in bytes
-const TCP_SERVER_ADDRESS = "localhost";
-const TCP_SERVER_PORT = 3000;
+const TCP_SERVER_ADDRESS = process.env.SERVER_HOST || "localhost";
+const TCP_SERVER_PORT = process.env.SERVER_PORT || 3000;
 
 // Function to generate checksums for a file
 function _generateChecksums(data, blockSize) {
