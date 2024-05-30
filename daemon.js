@@ -87,9 +87,14 @@ function patchFile(destinationFilePath, patches, srcLength) {
     0
   );
 
+  // Apply the patches
+  console.log("Applying patches: ");
   patches.forEach((patch) => {
     patch.data.copy(patchingBuffer, patch.offset);
   });
+  console.log("Patches applied");
+  // Log the patched buffer
+  console.log(patchingBuffer.toString());
 
   fs.writeFileSync(destinationFilePath, fileBuffer);
 }
@@ -122,18 +127,30 @@ function handleMessageFromServer(message) {
             sourceChecksums
           );
           if (differences.length > 0) {
+            console.log(`Differences found for ${sourceFilePath}`);
+            console.log(JSON.stringify(differences, null, 2));
+
             sendMessageToServer({
               type: "data_request",
               filePath: destinationFilePath,
               differences,
               changeId,
             });
+
+            // Log message sent
+            console.log(
+              `Data request sent for ${destinationFilePath} and changeId: ${changeId}`
+            );
           }
         }
       );
       break;
     case "data_request":
       const _sourceData = this.fileData.get(message.changeId);
+
+      console.log(`Data request received for ${message.filePath}`);
+      console.log(_sourceData);
+
       if (!_sourceData) {
         // This will return early in clients that did not make the source change
         return;
@@ -147,13 +164,24 @@ function handleMessageFromServer(message) {
         const patch = _sourceData.slice(start, end);
         patches.push({ data: patch, offset: start });
       });
+
+      console.log("calculated patches: ");
+      console.log(JSON.stringify(_patches, null, 2));
+
       sendMessageToServer({
         type: "data_response",
         filePath: message.filePath,
         patches: _patches,
       });
+
+      // Log message sent
+      console.log(`Data response sent for ${message.filePath}`);
       break;
     case "data_response":
+      console.log(
+        `Data response received (received patches) for ${message.filePath}`
+      );
+
       const patches = message.patches;
       const srcLength = message.sourceLength;
       patchFile(message.filePath, patches, srcLength);
@@ -203,6 +231,8 @@ async function main() {
           checksums: result.checksums,
         });
         fileData.set(changeId, result.data);
+        // Log
+        console.log(`File changed: ${filePath} with changeId: ${changeId}`);
       });
     })
     .on("unlink", (filePath) => console.log(`File deleted: ${filePath}`))
