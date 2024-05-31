@@ -3,7 +3,7 @@ const path = require("path");
 const chokidar = require("chokidar");
 const crypto = require("crypto");
 const Client = require("./client");
-const { readAndEncode, findDifferences, patchFile } = require("./lib");
+const { readAndEncode } = require("./lib");
 
 // Constants
 const TCP_SERVER_ADDRESS = process.env.SERVER_HOST || "localhost";
@@ -33,30 +33,18 @@ async function main() {
 
   // Event Handlers
   watcher
-    // .on("add", (filePath) => {
-    //   readAndEncode(filePath, BLOCK_SIZE).then((result) => {
-    //     client.sendMessage({
-    //       type: "file_changed",
-    //       filePath,
-    //       checksums: result.checksums,
-    //     });
-    //   });
-    // })
-    .on("change", (filePath) => {
+    .on("change", async (filePath) => {
       const changeId = crypto.randomBytes(32).toString("hex");
-      readAndEncode(filePath, BLOCK_SIZE).then((result) => {
-        client.sendMessage({
-          type: "file_changed",
-          filePath,
-          changeId,
-          checksums: result.checksums,
-        });
-        fileData.set(changeId, result.data);
-        // Log
-        console.log(`File changed: ${filePath} with changeId: ${changeId}`);
+      const result = await readAndEncode(filePath, BLOCK_SIZE);
+      client.sendMessage({
+        type: "file_changed",
+        filePath,
+        changeId,
+        checksums: result.checksums,
       });
+      fileData.set(changeId, result.data);
+      console.log(`File changed: ${filePath} with changeId: ${changeId}`);
     })
-    .on("unlink", (filePath) => console.log(`File deleted: ${filePath}`))
     .on("error", (error) => console.error(`Watcher error: ${error}`))
     .on("ready", () => console.log(`Daemon watching directory: ${watchDir}`));
 
@@ -70,13 +58,12 @@ async function main() {
   });
 
   // Graceful Shutdown (Ctrl+C)
-  process.on("SIGINT", () => {
+  process.on("SIGINT", async () => {
     console.log("\nStopping daemon...");
-    watcher.close().then(() => {
-      client.destroy(); // Close the client connection
-      console.log("Daemon stopped.");
-      process.exit(0);
-    });
+    await watcher.close();
+    client.destroy();
+    console.log("Daemon stopped.");
+    process.exit(0);
   });
 }
 

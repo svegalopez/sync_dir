@@ -15,48 +15,56 @@ class Client {
     });
   }
 
+  destroy() {
+    this.client.destroy();
+  }
+
   handleMessages(fileData, watchDir, BLOCK_SIZE) {
     this.client.on("data", (data) => {
       this._handleMessageFromServer(data, fileData, watchDir, BLOCK_SIZE);
     });
   }
 
-  _handleMessageFromServer(data, fileData, watchDir, BLOCK_SIZE) {
+  sendMessage(message) {
+    this.client.write(JSON.stringify(message));
+  }
+
+  async _handleMessageFromServer(data, fileData, watchDir, BLOCK_SIZE) {
     const message = JSON.parse(data);
-    const messageType = message.type;
-    switch (messageType) {
+
+    // Handle message based on type
+    switch (message.type) {
       case "file_changed":
-        const sourceFilePath = message.filePath;
-        const sourceChecksums = message.checksums;
-        const changeId = message.changeId;
         const destinationFilePath = path.join(
           watchDir,
-          path.basename(sourceFilePath)
+          path.basename(message.filePath)
         );
-        readAndEncode(destinationFilePath, BLOCK_SIZE).then(
-          (destinationResult) => {
-            const differences = findDifferences(
-              destinationResult.checksums,
-              sourceChecksums
-            );
-            if (differences.length > 0) {
-              console.log(`Differences found for ${sourceFilePath}`);
-              console.log(JSON.stringify(differences, null, 2));
-
-              this.sendMessage({
-                type: "data_request",
-                filePath: destinationFilePath,
-                differences,
-                changeId,
-              });
-
-              // Log message sent
-              console.log(
-                `Data request sent for ${destinationFilePath} and changeId: ${changeId}`
-              );
-            }
-          }
+        const destinationResult = await readAndEncode(
+          destinationFilePath,
+          BLOCK_SIZE
         );
+        const differences = findDifferences(
+          destinationResult.checksums,
+          message.checksums
+        );
+
+        if (differences.length > 0) {
+          console.log(`Differences found for ${message.filePath}`);
+          console.log(JSON.stringify(differences, null, 2));
+
+          this.sendMessage({
+            type: "data_request",
+            filePath: destinationFilePath,
+            differences,
+            changeId: message.changeId,
+          });
+
+          // Log message sent
+          console.log(
+            `Data request sent for ${destinationFilePath} and changeId: ${message.changeId}`
+          );
+        }
+
         break;
       case "data_request":
         const _sourceData = fileData.get(message.changeId);
@@ -69,9 +77,8 @@ class Client {
           return;
         }
 
-        const differences = message.differences;
         const _patches = [];
-        differences.forEach((diff) => {
+        message.differences.forEach((diff) => {
           const start = diff.offset;
           const end = Math.min(start + BLOCK_SIZE, _sourceData.length);
           const patch = _sourceData.slice(start, end);
@@ -101,18 +108,6 @@ class Client {
         patchFile(message.filePath, patches, srcLength);
         break;
     }
-  }
-
-  sendMessage(message) {
-    this.client.write(JSON.stringify(message));
-  }
-
-  on(event, callback) {
-    this.client.on(event, callback);
-  }
-
-  destroy() {
-    this.client.destroy();
   }
 }
 

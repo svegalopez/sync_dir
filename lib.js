@@ -43,6 +43,8 @@ function findDifferences(localChecksums, remoteChecksums) {
       differences.push(remote); // No match found, so this is a difference
     }
   });
+  console.log("Total checksums locally: " + localChecksums.length);
+  console.log("Differences found: " + differences.length);
   return differences;
 }
 
