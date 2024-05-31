@@ -44,8 +44,10 @@ class Client {
           BLOCK_SIZE
         );
         const differences = findDifferences(
+          message.checksums,
+          message.blocks,
           destinationResult.checksums,
-          message.checksums
+          destinationResult.blocks
         );
 
         if (differences.length > 0) {

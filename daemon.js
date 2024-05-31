@@ -8,7 +8,7 @@ const { readAndEncode } = require("./lib");
 // Constants
 const TCP_SERVER_ADDRESS = process.env.SERVER_HOST || "localhost";
 const TCP_SERVER_PORT = process.env.SERVER_PORT || 3000;
-const BLOCK_SIZE = process.env.BLOCK_SIZE || 256;
+const BLOCK_SIZE = parseInt(process.env.BLOCK_SIZE) || 256;
 
 // Main function
 async function main() {
@@ -41,19 +41,24 @@ async function main() {
         filePath,
         changeId,
         checksums: result.checksums,
+        blocks: result.blocks,
       });
       fileData.set(changeId, result.data);
       console.log(`File changed: ${filePath} with changeId: ${changeId}`);
     })
     .on("error", (error) => console.error(`Watcher error: ${error}`))
-    .on("ready", () => console.log(`Daemon watching directory: ${watchDir}`));
+    .on("ready", () =>
+      console.log(
+        `Daemon watching directory: ${watchDir} with blockSize: ${BLOCK_SIZE}`
+      )
+    );
 
   // Connect to the TCP server and listen for messages
   const client = new Client(TCP_SERVER_ADDRESS, TCP_SERVER_PORT);
   client.connect();
   client.handleMessages(fileData, watchDir, BLOCK_SIZE);
 
-  client.on("error", (error) => {
+  client.client.on("error", (error) => {
     console.error("Error connecting to TCP server:", error);
   });
 

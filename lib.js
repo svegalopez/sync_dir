@@ -5,19 +5,19 @@ const bufferCrc32 = require("buffer-crc32");
 
 // Function to generate checksums for a file
 function _generateChecksums(data, blockSize) {
+  console.log("Generating checksums", data.length, blockSize);
   const checksums = [];
+  const blocks = [];
   for (let offset = 0; offset < data.length; offset += blockSize) {
-    const block = data.slice(offset, Math.min(offset + blockSize, data.length)); // Get the next block of data
-
-    // Calculate CRC32 checksum for the block
+    const toEnd = Math.min(offset + blockSize, data.length);
+    const block = data.slice(offset, toEnd); // Get the next block of data
+    blocks.push(block.toString()); // Store the block for debugging
     const crc = bufferCrc32(block).readUInt32BE(0);
-
-    // Calculate MD5 hash for the block
     const md5 = crypto.createHash("md5").update(block).digest("hex");
-
     checksums.push({ crc, md5, offset }); // Store checksums along with block offset
   }
-  return checksums;
+  console.log(blocks);
+  return { checksums, blocks };
 }
 
 // Function to read a file and generate checksums
@@ -25,25 +25,29 @@ function readAndEncode(filePath, blockSize) {
   return new Promise((resolve, reject) => {
     fs.readFile(filePath, (err, data) => {
       if (err) reject(err);
-      const checksums = _generateChecksums(data, blockSize);
-      resolve({ checksums, data });
+      const { checksums, blocks } = _generateChecksums(data, blockSize);
+      resolve({ checksums, data, blocks });
     });
   });
 }
 
-// Function to find differences between two sets of checksums
-function findDifferences(localChecksums, remoteChecksums) {
+// srcBlocks and destBlocks are only for debugging during development
+function findDifferences(srcChecksums, srcBlocks, destChecksums, destBlocks) {
   const differences = [];
-  remoteChecksums.forEach((remote) => {
-    // Iterate through remote checksums
-    const localMatch = localChecksums.find(
-      (local) => local.crc === remote.crc && local.md5 === remote.md5
-    ); // Find a match in local checksums
-    if (!localMatch) {
-      differences.push(remote); // No match found, so this is a difference
+
+  for (let i = 0; i < destChecksums.length; i++) {
+    const destCS = destChecksums[i];
+    const srcMatch = srcChecksums.find(
+      (sourceCS) => sourceCS.crc === destCS.crc && sourceCS.md5 === destCS.md5
+    );
+    if (!srcMatch) {
+      console.log(destBlocks[i].toString());
+      console.log("======mismatch========");
+      console.log(srcBlocks[i].toString());
+      differences.push(destCS); // No match found, so this is a difference
     }
-  });
-  console.log("Total checksums locally: " + localChecksums.length);
+  }
+  console.log("Total checksums locally: " + srcChecksums.length);
   console.log("Differences found: " + differences.length);
   return differences;
 }
