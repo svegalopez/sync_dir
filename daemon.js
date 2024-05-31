@@ -1,115 +1,17 @@
 const fs = require("fs");
 const path = require("path");
 const chokidar = require("chokidar");
-const net = require("net");
 const crypto = require("crypto");
-const bufferCrc32 = require("buffer-crc32");
+const Client = require("./client");
+const { readAndEncode, findDifferences, patchFile } = require("./lib");
 
 // Constants
-const BLOCK_SIZE = 256; // Block size in bytes
 const TCP_SERVER_ADDRESS = process.env.SERVER_HOST || "localhost";
 const TCP_SERVER_PORT = process.env.SERVER_PORT || 3000;
-
-// Function to generate checksums for a file
-function _generateChecksums(data, blockSize) {
-  const checksums = [];
-  for (let offset = 0; offset < data.length; offset += blockSize) {
-    const block = data.slice(offset, Math.min(offset + blockSize, data.length)); // Get the next block of data
-
-    // Calculate CRC32 checksum for the block
-    const crc = bufferCrc32(block).readUInt32BE(0);
-
-    // Calculate MD5 hash for the block
-    const md5 = crypto.createHash("md5").update(block).digest("hex");
-
-    checksums.push({ crc, md5, offset }); // Store checksums along with block offset
-  }
-  return checksums;
-}
-
-// Function to read a file and generate checksums
-function readAndEncode(filePath, blockSize) {
-  return new Promise((resolve, reject) => {
-    fs.readFile(filePath, (err, data) => {
-      if (err) reject(err);
-      const checksums = _generateChecksums(data, blockSize);
-      resolve({ checksums, data });
-    });
-  });
-}
-
-// Function to find differences between two sets of checksums
-function findDifferences(localChecksums, remoteChecksums) {
-  const differences = [];
-  remoteChecksums.forEach((remote) => {
-    // Iterate through remote checksums
-    const localMatch = localChecksums.find(
-      (local) => local.crc === remote.crc && local.md5 === remote.md5
-    ); // Find a match in local checksums
-    if (!localMatch) {
-      differences.push(remote); // No match found, so this is a difference
-    }
-  });
-  return differences;
-}
-
-// Function to patch a file with differences
-// function patchFile(destinationFilePath, differences, blockSize, sourceData) {
-//   let forPatching = Buffer.alloc(sourceData.length); // Create a buffer for patching, it will be the same size as source data, because eventually it will be the same
-
-//   fs.readSync(
-//     fs.openSync(destinationFilePath, "r"),
-//     forPatching,
-//     0,
-//     forPatching.length,
-//     0
-//   ); // Read destination data into the forPatching buffer
-
-//   // At this point, forPatching contains the destination data, the patching begins:
-//   differences.forEach((diff) => {
-//     // Iterate through the differences
-//     const start = diff.offset;
-//     const end = Math.min(start + blockSize, sourceData.length);
-//     sourceData.copy(forPatching, start, start, end); // Copy the correct block from source to new data
-//   });
-
-//   fs.writeFileSync(destinationFilePath, forPatching); // Write the patched data to the destination file
-// }
-function patchFile(destinationFilePath, patches, srcLength) {
-  const patchingBuffer = new Buffer.alloc(srcLength);
-
-  // Copy as much as you can fit of the destinationFile contents into the patchingBuffer
-  fs.readSync(
-    fs.openSync(destinationFilePath, "r"),
-    patchingBuffer,
-    0,
-    patchingBuffer.length,
-    0
-  );
-
-  // Apply the patches
-  console.log("Applying patches: ");
-  patches.forEach((patch) => {
-    patch.data.copy(patchingBuffer, patch.offset);
-  });
-  console.log("Patches applied");
-  // Log the patched buffer
-  console.log(patchingBuffer.toString());
-
-  fs.writeFileSync(destinationFilePath, fileBuffer);
-}
-
-// Function to send a message to the TCP server
-function sendMessageToServer(message) {
-  const client = new net.Socket();
-  client.connect(TCP_SERVER_PORT, TCP_SERVER_ADDRESS, () => {
-    client.write(JSON.stringify(message));
-    client.destroy(); // Close the client after sending the message
-  });
-}
+const BLOCK_SIZE = process.env.BLOCK_SIZE || 256;
 
 // Function to handle a message from the TCP server
-function handleMessageFromServer(message) {
+function handleMessageFromServer(message, fileData, watchDir) {
   const messageType = message.type;
   switch (messageType) {
     case "file_changed":
@@ -117,7 +19,7 @@ function handleMessageFromServer(message) {
       const sourceChecksums = message.checksums;
       const changeId = message.changeId;
       const destinationFilePath = path.join(
-        this.watchDir,
+        watchDir,
         path.basename(sourceFilePath)
       );
       readAndEncode(destinationFilePath, BLOCK_SIZE).then(
@@ -130,7 +32,7 @@ function handleMessageFromServer(message) {
             console.log(`Differences found for ${sourceFilePath}`);
             console.log(JSON.stringify(differences, null, 2));
 
-            sendMessageToServer({
+            client.sendMessage({
               type: "data_request",
               filePath: destinationFilePath,
               differences,
@@ -146,7 +48,7 @@ function handleMessageFromServer(message) {
       );
       break;
     case "data_request":
-      const _sourceData = this.fileData.get(message.changeId);
+      const _sourceData = fileData.get(message.changeId);
 
       console.log(`Data request received for ${message.filePath}`);
       console.log(_sourceData);
@@ -162,13 +64,13 @@ function handleMessageFromServer(message) {
         const start = diff.offset;
         const end = Math.min(start + BLOCK_SIZE, _sourceData.length);
         const patch = _sourceData.slice(start, end);
-        patches.push({ data: patch, offset: start });
+        _patches.push({ data: patch, offset: start });
       });
 
       console.log("calculated patches: ");
       console.log(JSON.stringify(_patches, null, 2));
 
-      sendMessageToServer({
+      client.sendMessage({
         type: "data_response",
         filePath: message.filePath,
         patches: _patches,
@@ -214,7 +116,7 @@ async function main() {
   watcher
     // .on("add", (filePath) => {
     //   readAndEncode(filePath, BLOCK_SIZE).then((result) => {
-    //     sendMessageToServer({
+    //     client.sendMessage({
     //       type: "file_changed",
     //       filePath,
     //       checksums: result.checksums,
@@ -224,7 +126,7 @@ async function main() {
     .on("change", (filePath) => {
       const changeId = crypto.randomBytes(32).toString("hex");
       readAndEncode(filePath, BLOCK_SIZE).then((result) => {
-        sendMessageToServer({
+        client.sendMessage({
           type: "file_changed",
           filePath,
           changeId,
@@ -240,14 +142,12 @@ async function main() {
     .on("ready", () => console.log(`Daemon watching directory: ${watchDir}`));
 
   // Connect to the TCP server and listen for messages
-  const client = new net.Socket();
-  client.connect(TCP_SERVER_PORT, TCP_SERVER_ADDRESS, () => {
-    console.log("Connected to TCP server");
-  });
+  const client = new Client(TCP_SERVER_ADDRESS, TCP_SERVER_PORT);
+  client.connect();
 
   client.on("data", (data) => {
     const message = JSON.parse(data);
-    handleMessageFromServer.bind({ fileData, watchDir })(message);
+    handleMessageFromServer(message, fileData, watchDir);
   });
 
   client.on("error", (error) => {

@@ -4,6 +4,9 @@ FROM node:20
 # Create app directory
 WORKDIR /usr/src/app
 
+# Install vim
+RUN apt-get update && apt-get install -y vim
+
 # Copy the client source code
 COPY daemon.js ./
 
