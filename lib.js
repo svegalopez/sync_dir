@@ -62,8 +62,12 @@ function patchFile(destinationFilePath, patches, srcLength) {
   // Apply the patches
   console.log("Applying patches: ");
   patches.forEach((patch) => {
-    patch.data.copy(patchingBuffer, patch.offset);
+    console.log(JSON.stringify(patch, null, 2));
+
+    const patchBuffer = Buffer.from(patch.data.data);
+    patchBuffer.copy(patchingBuffer, patch.offset);
   });
+
   console.log("Patches applied");
   // Log the patched buffer
   console.log(patchingBuffer.toString());

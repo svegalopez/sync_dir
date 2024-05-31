@@ -10,87 +10,6 @@ const TCP_SERVER_ADDRESS = process.env.SERVER_HOST || "localhost";
 const TCP_SERVER_PORT = process.env.SERVER_PORT || 3000;
 const BLOCK_SIZE = process.env.BLOCK_SIZE || 256;
 
-// Function to handle a message from the TCP server
-function handleMessageFromServer(message, fileData, watchDir) {
-  const messageType = message.type;
-  switch (messageType) {
-    case "file_changed":
-      const sourceFilePath = message.filePath;
-      const sourceChecksums = message.checksums;
-      const changeId = message.changeId;
-      const destinationFilePath = path.join(
-        watchDir,
-        path.basename(sourceFilePath)
-      );
-      readAndEncode(destinationFilePath, BLOCK_SIZE).then(
-        (destinationResult) => {
-          const differences = findDifferences(
-            destinationResult.checksums,
-            sourceChecksums
-          );
-          if (differences.length > 0) {
-            console.log(`Differences found for ${sourceFilePath}`);
-            console.log(JSON.stringify(differences, null, 2));
-
-            client.sendMessage({
-              type: "data_request",
-              filePath: destinationFilePath,
-              differences,
-              changeId,
-            });
-
-            // Log message sent
-            console.log(
-              `Data request sent for ${destinationFilePath} and changeId: ${changeId}`
-            );
-          }
-        }
-      );
-      break;
-    case "data_request":
-      const _sourceData = fileData.get(message.changeId);
-
-      console.log(`Data request received for ${message.filePath}`);
-      console.log(_sourceData);
-
-      if (!_sourceData) {
-        // This will return early in clients that did not make the source change
-        return;
-      }
-
-      const differences = message.differences;
-      const _patches = [];
-      differences.forEach((diff) => {
-        const start = diff.offset;
-        const end = Math.min(start + BLOCK_SIZE, _sourceData.length);
-        const patch = _sourceData.slice(start, end);
-        _patches.push({ data: patch, offset: start });
-      });
-
-      console.log("calculated patches: ");
-      console.log(JSON.stringify(_patches, null, 2));
-
-      client.sendMessage({
-        type: "data_response",
-        filePath: message.filePath,
-        patches: _patches,
-      });
-
-      // Log message sent
-      console.log(`Data response sent for ${message.filePath}`);
-      break;
-    case "data_response":
-      console.log(
-        `Data response received (received patches) for ${message.filePath}`
-      );
-
-      const patches = message.patches;
-      const srcLength = message.sourceLength;
-      patchFile(message.filePath, patches, srcLength);
-      break;
-  }
-}
-
 // Main function
 async function main() {
   const fileData = new Map();
@@ -144,11 +63,7 @@ async function main() {
   // Connect to the TCP server and listen for messages
   const client = new Client(TCP_SERVER_ADDRESS, TCP_SERVER_PORT);
   client.connect();
-
-  client.on("data", (data) => {
-    const message = JSON.parse(data);
-    handleMessageFromServer(message, fileData, watchDir);
-  });
+  client.handleMessages(fileData, watchDir, BLOCK_SIZE);
 
   client.on("error", (error) => {
     console.error("Error connecting to TCP server:", error);

@@ -1,45 +1,28 @@
-# File Syncer
+# File Syncing Daemon
 
-This is a file synchronization program that syncs files over the network.
-It uses the rsync algorithm to calculate checksums for files and patches them over the network. It can be used to syncronize files between a cluster of machines in an efficient way, using node.js.
+This project is a daemon that syncs files between multiple clients over a TCP connection. It uses a message broker to handle communication between clients.
 
-## Installation
+## How it works
 
-To use this program, you need to have Node.js installed. You can download it from the official website: [Node.js](https://nodejs.org/)
+1. Each client runs the daemon and watches a directory for changes.
+2. When a change is detected, the client sends a message to the message broker with the changed file's checksums.
+3. The message broker broadcasts the message to all connected clients.
+4. Each client receives the message and checks if it has the same file with the same checksums. If not, it requests the differences from the client that sent the message.
+5. The client that sent the message responds with the differences, which are applied to the file by the requesting client.
 
 ## Usage
 
-1. Clone the repository:
-
-   ```bash
-   git clone https://github.com/your-username/your-repo.git
-   ```
-
-2. Install the dependencies:
-
-   ```bash
-   cd your-repo
-   npm install
-   ```
-
-3. Start the program:
-
-   ```bash
-   node sync.js /path/to/directory
-   ```
-
-   Replace `/path/to/directory` with the path to the directory you want to sync.
-
-4. The program will start watching the directory for changes. Whenever a file is added or modified, it will calculate the checksums for the file and send them to the server. If there are differences between the local and remote checksums, the program will request the data from the server and patch the file.
+1. Run the daemon by executing `node main.js <directory-to-watch>`.
+2. The daemon will connect to the message broker and start watching the specified directory.
+3. When a change is detected, the daemon will sync the changed file with other clients.
 
 ## Configuration
 
-You can configure the program by modifying the following constants in the code:
+- `SERVER_HOST`: The hostname of the message broker. Defaults to `localhost`.
+- `SERVER_PORT`: The port number of the message broker. Defaults to `3000`.
+- `BLOCK_SIZE`: The block size used for calculating checksums. Defaults to `256`.
 
-- `BLOCK_SIZE`: The block size in bytes used for calculating checksums. Default is 256.
-- `TCP_SERVER_ADDRESS`: The address of the TCP server. Default is "localhost".
-- `TCP_SERVER_PORT`: The port number of the TCP server. Default is 3000.
+## Notes
 
-## License
-
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+- This project uses TCP for communication between clients, which means it's not suitable for large-scale deployments.
+- The daemon uses a simple checksum-based syncing algorithm, which may not be suitable for all use cases.
